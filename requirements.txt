@@ -1,0 +1,75 @@
+# =============================================================================
+# AI 代码导师系统 —— 运行期依赖清单
+#
+# 用途：start.bat 会自动执行 `pip install -r requirements.txt` 安装以下依赖，
+#       学生双击一个 .bat 就能把整套系统跑起来，不需要懂 pip。
+#
+# 覆盖的功能模块（详见 README.md）：
+#   · 代码文件自动分类      app/services/file_classifier.py
+#   · AI 自动检测（语法+深度）app/services/code_checker.py
+#   · AI 代码改错           app/services/code_fixer.py
+#   · AI 注释生成           app/services/comment_generator.py
+#   · 开源协作链路（检索/测试生成/沙箱/自动修复）app/agents/*、app/services/repo/*
+#
+# 注意：本文件必须与 pyproject.toml 的 [project.dependencies] 保持一致，
+#       否则 `pip install -r requirements.txt` 与 `pip install -e .` 装出来的环境会不同。
+#       可以用 `python tools/verify_integration.py` 自动比对两者。
+# =============================================================================
+
+# ---------- Web 后端框架（FastAPI 及其运行依赖）----------
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.1
+# 前端上传代码文件用（FastAPI 处理 multipart/form-data 必需，缺了会直接报错）
+python-multipart>=0.0.9
+
+# ---------- 数据库（本地 SQLite，异步驱动）----------
+sqlalchemy>=2.0.30
+aiosqlite>=0.20.0
+
+# ---------- HTTP 客户端（调用大模型 / 代码托管平台 API）----------
+httpx>=0.27.0
+# 通用 LLM 客户端（app/core/llm_client.py）：官方 SDK，负责鉴权头、超时与
+# SSE 流式解析；重试与错误映射由项目自管（见该文件模块注释）
+openai>=1.40.0
+
+# ---------- 代码解析：Git 操作 + 多语言语法树 ----------
+GitPython>=3.1.43
+tree-sitter>=0.23
+# 注意：语法包必须用「自带编译产物」的独立 wheel（tree-sitter-python 等），
+# 不要换成 tree-sitter-language-pack —— 它会在运行时从 GitHub 下载语法库，
+# 内网 / 离线环境会直接下载超时失败。
+# AI 代码导师面向 C / Java / Python 学习者，因此额外装上 c 与 java 语法包。
+tree-sitter-python>=0.23
+tree-sitter-javascript>=0.23
+tree-sitter-go>=0.23
+tree-sitter-c>=0.23
+tree-sitter-java>=0.23
+
+# ---------- 代码检索：关键词召回 + 向量召回 ----------
+rank_bm25>=0.2.2
+faiss-cpu>=1.8
+numpy>=1.26
+# fastembed 走 ONNX Runtime 推理，避免 sentence-transformers 带来的约 2GB PyTorch 依赖。
+# 首次使用会下载嵌入模型（约 180MB），公网 huggingface.co 不可达时
+# 已默认走镜像（见 .env.example 的 RETRIEVAL__HF_ENDPOINT）。
+fastembed>=0.4
+
+# ---------- 中文分词（检索用）----------
+jieba>=0.42
+
+# ---------- 沙箱执行：容器调用 + 覆盖率采集 ----------
+# docker：沙箱用真正的容器隔离；缺了会自动降级成本地子进程（**没有隔离能力**）
+# coverage：本地沙箱后端跑测试时要用的覆盖率工具，属于运行期依赖而非纯开发工具
+docker>=7.1
+coverage>=7.5.0
+
+# =============================================================================
+# 学生端的「分类 / 检测 / 改错 / 注释」四个模块**不需要任何额外依赖**，
+# 它们只用上面的 fastapi + httpx + pydantic + sqlalchemy + tree-sitter 组合。
+#
+# 可选：开发与测试工具（需要跑 pytest / 代码检查时再装）
+#   pip install pytest pytest-asyncio ruff mypy
+# =============================================================================

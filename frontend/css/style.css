@@ -1,0 +1,1076 @@
+/* ============================================================================
+   AI 代码导师 · 样式表
+
+   设计目标：简洁清爽、适合学生长时间看屏幕
+     · 配色克制：浅灰底 + 白卡片 + 一个主色调，不用花哨渐变
+     · 一眼看懂：每个区域都是一张独立卡片，边界清楚
+     · 护眼：正文 14-15px，行距放宽，代码用等宽字体
+
+   文件结构（按页面从上到下的顺序）：
+     1. 全局变量与重置
+     2. 顶部栏
+     3. 三栏布局
+     4. 卡片通用样式
+     5. 左侧栏：上传区 / 分类结果 / 历史记录
+     6. 中部：代码展示
+     7. 右侧：结果展示（评分 / 问题 / 注释 / 改错）
+     8. 按钮、徽章、提示条
+     9. 窄屏适配
+   ========================================================================== */
+
+/* ==========================================================================
+   1. 全局变量与重置
+   ========================================================================== */
+:root {
+  /* 主色调：柔和的青蓝，比常见的紫色渐变更"学习工具"一些 */
+  --accent: #2f7d8f;
+  --accent-soft: #e6f2f5;
+  --accent-border: #b8dbe3;
+
+  /* 语义色：错误 / 警告 / 提示 / 成功 */
+  --error: #c0392b;
+  --error-soft: #fdecea;
+  --warn: #b7791f;
+  --warn-soft: #fdf6e3;
+  --info: #2c6fbb;
+  --info-soft: #eaf2fb;
+  --ok: #2f855a;
+  --ok-soft: #e8f5ee;
+
+  /* 中性色 */
+  --text: #1f2933;
+  --text-dim: #5b6b7b;
+  --text-faint: #8a97a5;
+  --line: #e3e8ee;
+  --bg: #f5f7f9;
+  --card: #ffffff;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+
+  /* 代码等宽字体：优先系统自带，避免下载字体文件 */
+  --mono: "Cascadia Mono", "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+
+* { box-sizing: border-box; }
+
+/* ---------------------------------------------------------------------------
+   【必须保留】让 hidden 属性真正生效
+
+   页面里大量元素是靠 JS 设 `el.hidden = true/false` 控制显隐的
+   （代码区的空状态、三块结果面板、分类卡片、语言徽章等都是）。
+   `hidden` 的效果来自浏览器默认样式表里的 `[hidden] { display: none }`，
+   而**作者样式表里的任何 display 声明都会覆盖它**——这与选择器权重无关，
+   作者样式本来就优先于浏览器默认样式。
+
+   后果非常隐蔽：`.empty { display: grid }` 会让 `el.codeEmpty.hidden = true`
+   完全失效，"还没有代码 / 从左边选择文件，或粘贴一段代码"就一直压在代码上面；
+   `.result { display: flex }` 则让三块结果面板同时堆着显示。
+
+   这条规则统一兜底，比在每个选择器后面补 `.xxx[hidden] { display: none }`
+   更不容易漏。
+   --------------------------------------------------------------------------- */
+[hidden] { display: none !important; }
+
+/* 同一件事的"类版本"：`.hidden` 类。
+   页面里两种写法都在用——
+     · JS 加 `.hidden` 类：占位提示、代码块、语言徽章（需求要求用类控制）
+     · JS 设 `el.hidden = true` 属性：三块结果面板等历史代码
+   两条规则并存，谁都不会被自定义 display 覆盖。
+   !important 是必要的：`.result { display: flex }` 这类声明权重高于单类选择器。 */
+.hidden { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; }
+
+/* 滚动条做窄一点，避免抢视觉 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb {
+  background: #cdd6e0;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover { background: #b6c2cf; }
+
+/* ==========================================================================
+   2. 顶部栏
+   ========================================================================== */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.topbar__brand { display: flex; align-items: center; gap: 12px; }
+
+/* 左上角的小方块 logo，用主色调 */
+.topbar__logo {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+}
+
+.topbar__title { font-size: 17px; }
+.topbar__subtitle { margin: 0; font-size: 12px; color: var(--text-dim); }
+
+.topbar__status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ==========================================================================
+   3. 三栏布局（可拖动改变宽度）
+   --------------------------------------------------------------------------
+   栅格结构（5 列，正好对应页面里的 5 个元素：
+   左侧栏 ｜ 垂直分隔条 ｜ 中间代码区 ｜ 垂直分隔条 ｜ 右侧结果区）：
+
+       var(--sidebar-w)  var(--resizer)  minmax(--main-min, 1fr)  var(--resizer)  var(--result-w)
+
+   为什么用 CSS 变量而不是直接写死 px：
+   JS 拖动时只需要修改变量（--sidebar-w / --result-w）这一个值，
+   不用去动栅格字符串，也不会和"最小宽度"打架——最小宽度由变量默认值
+   与 JS 的 clamp 双重保证（需求三第 4 条）：
+       左侧栏 ≥ 200px ｜ 中间栏 ≥ 400px ｜ 右侧栏 ≥ 280px
+   ========================================================================== */
+:root {
+  --sidebar-w: 300px;   /* 左侧栏当前宽度（JS 拖动时会改这个值） */
+  --result-w: 380px;    /* 右侧结果区当前宽度 */
+  --main-min: 400px;    /* 中间代码区最小宽度：再挤就看不清代码了 */
+  --resizer: 8px;       /* 分隔条占位宽度 */
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;              /* 关键：让内部滚动区正常工作 */
+  display: grid;
+  grid-template-columns:
+    var(--sidebar-w)
+    var(--resizer)
+    minmax(var(--main-min), 1fr)
+    var(--resizer)
+    var(--result-w);
+  /* 注意：列之间不再用 gap —— 分隔条本身就是那 8px 的间距，
+     再叠一层 gap 会让"左边栏宽度 = 拖动值"这个直觉对不上 */
+  padding: 14px 20px 20px;
+}
+
+.sidebar, .pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---------- 3.1 可拖动的分隔条 ---------- */
+.resizer {
+  background: transparent;
+  transition: background 0.15s;
+  /* 拖动时不要让浏览器把手指/鼠标事件解释成滚动或选中文字 */
+  touch-action: none;
+  user-select: none;
+}
+
+/* 垂直分隔条：左右拖动，鼠标变成 col-resize（需求三第 6 条） */
+.resizer--col {
+  cursor: col-resize;
+  border-radius: 4px;
+}
+
+/* 水平分隔条：上下拖动，鼠标变成 row-resize */
+.resizer--row {
+  cursor: row-resize;
+  height: 8px;
+  margin: 4px 0;
+  border-radius: 4px;
+}
+
+/* 悬停/聚焦时给一点视觉反馈，否则学生根本不知道这里能拖 */
+.resizer:hover,
+.resizer:focus-visible {
+  background: var(--accent-border);
+  outline: none;
+}
+
+/* 正在拖动时（JS 会加上 is-dragging）：整条分隔条高亮，
+   并且给 body 加上带方向的 .is-resizing-col / .is-resizing-row，
+   让鼠标样式在拖动过程中保持不变（只加列方向或行方向，不写一个笼统的
+   .is-resizing——那会让"只想要竖线光标"的地方也一起改掉） */
+.resizer.is-dragging { background: var(--accent); }
+
+body.is-resizing-col, body.is-resizing-col * { cursor: col-resize !important; }
+body.is-resizing-row, body.is-resizing-row * { cursor: row-resize !important; }
+
+/* 拖动过程中禁止选中文字：否则鼠标划过会把页面文字选成一片蓝 */
+body.is-resizing-col, body.is-resizing-row { user-select: none; }
+
+/* ==========================================================================
+   4. 卡片
+   ========================================================================== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* card--grow：占满剩余高度，用于代码区和结果区 */
+.card--grow { flex: 1; min-height: 0; }
+
+.card__title {
+  font-size: 13px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+/* ==========================================================================
+   5. 左侧栏
+   ========================================================================== */
+
+/* ---------- 5.1 拖拽上传区 ---------- */
+.dropzone {
+  border: 1.5px dashed var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  padding: 20px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dropzone:hover { background: #dceef2; border-color: var(--accent); }
+
+/* 拖拽文件悬停时高亮，给学生明确反馈 */
+.dropzone.is-over {
+  background: #d0e8ee;
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.dropzone__icon { font-size: 20px; color: var(--accent); }
+.dropzone__text { margin: 6px 0 2px; font-size: 13px; }
+.dropzone__hint { margin: 0; font-size: 11px; color: var(--text-faint); }
+
+/* ---------- 5.1.1 项目库专用拖拽区（拖进来 = 入库）----------
+   与上面「① 选择你的代码」的区别必须让学生一眼看出来：
+   那个是"打开看看"，这个是"交作业"。
+   所以这里用**实线边框 + 强调色文字**，与浅色的预览拖拽区区分开。 */
+.dropzone--library {
+  padding: 14px 12px;
+  margin-bottom: 8px;
+  border-style: dashed;             /* 仍是虚线：明确"这里可以拖东西进来" */
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.dropzone--library .dropzone__text {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* 分类结果区用白色底，让"入库"这个动作看起来更"正式"一点 */
+
+/* ---------- 5.1.5 模型设置（选模型 + 填 API Key）----------
+   放在左侧栏最上面：它是"能不能用 AI"的前提，
+   所以用强调色边框和浅色底，跟下面几个纯浏览的卡片区分开。 */
+#modelCard {
+  border: 1px solid var(--accent-border);
+  background: linear-gradient(180deg, #f5fbfd 0%, #ffffff 60%);
+}
+
+/* 表单里的一行：上面标签、下面控件 */
+.field { display: block; margin-bottom: 8px; }
+
+.field__label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+/* Key 输入框 + 「显示」按钮并排 */
+.key-input { display: flex; gap: 6px; align-items: stretch; }
+.key-input .input { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+.key-input .btn { flex: 0 0 auto; }
+
+/* 模型说明文字（去哪申请 Key / 本地模型免 Key） */
+.model-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.6;
+  margin: 0 0 10px;
+  word-break: break-all;
+}
+
+.model-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* 状态行：一个小圆点 + 一句话，颜色随状态变化 */
+.model-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.model-status__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #c8d2dc;                  /* 默认灰点 = 状态未知 */
+}
+
+/* 三种状态：灰=未连接、绿=已连接、红=出错 */
+.model-status.is-ok { color: var(--ok); }
+.model-status.is-ok .model-status__dot { background: var(--ok); }
+.model-status.is-error { color: var(--error); }
+.model-status.is-error .model-status__dot { background: var(--error); }
+.model-status.is-busy .model-status__dot { background: var(--warn); }
+
+/* ---------- 5.2 粘贴代码折叠区 ---------- */
+.paste { font-size: 12px; }
+.paste summary { cursor: pointer; color: var(--accent); padding: 2px 0; }
+
+.input, .textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: #fbfcfd;
+}
+
+.input:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.textarea { resize: vertical; line-height: 1.5; }
+
+/* ---------- 5.3 键值列表（分类结果） ---------- */
+.kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  font-size: 13px;
+}
+
+.kv dt { color: var(--text-dim); }
+.kv dd { margin: 0; font-weight: 600; }
+
+/* ---------- 5.4 代码结构列表 ---------- */
+.structure summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+
+.structure__list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.structure__list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.structure__list code { font-family: var(--mono); color: var(--text); }
+.structure__list span { color: var(--text-faint); white-space: nowrap; }
+
+/* ---------- 5.5 历史记录 ---------- */
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.history__empty { color: var(--text-faint); font-size: 12px; padding: 8px 0; }
+
+.history__item {
+  padding: 8px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.history__item:hover { background: #f7fafb; border-color: var(--line); }
+
+.history__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.history__name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history__meta { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* ---------- 5.6 本地项目库 ---------- */
+/*
+  项目库文件夹路径（常显行）：
+  左侧栏只有 300px 左右，而 Windows 路径往往长得多，所以分成两行显示：
+    第 1 行：标签「项目库文件夹」+ 复制按钮
+    第 2 行：完整路径（等宽字体，太长时用省略号截断，完整值放在 title 里）
+  之所以让路径独占一行：挤在一行里会被按钮吃掉一大半宽度，
+  学生看到的往往是 `D:\桌面\开…` 这种没用的残片。
+*/
+.library__path {
+  display: flex;
+  flex-wrap: wrap;                  /* 允许路径换到第二行 */
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0 0 6px;
+  padding: 5px 7px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+  font-size: 11px;
+}
+
+.library__path-label {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.library__path-value {
+  /* order 排在按钮之后 + basis 100%：强制换行，让路径独占整行 */
+  order: 3;
+  flex: 1 1 100%;
+  min-width: 0;                     /* 没有它，flex 子项不会收缩，省略号不生效 */
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 路径被截断时的提示色：让"目录不存在"这种异常一眼能看出来 */
+.library__path-value.is-missing {
+  color: var(--warn);
+  font-style: italic;
+}
+
+/* 说明文字：用来告诉学生"代码该放在哪个文件夹"，路径用等宽字体更清楚 */
+.library__hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.library__hint code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: #f2f5f7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text);
+}
+
+/* 语言筛选按钮容器：放不下就换行，不做横向滚动 */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 当前选中的筛选项：用主色实心按钮表示，一眼能看出在筛选什么 */
+.chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.chip__count {
+  opacity: 0.75;
+  font-size: 11px;
+}
+
+/* 文件列表：最多 260px 高，超出后可滚动，避免把左侧栏撑爆 */
+.files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.files__empty { color: var(--text-faint); font-size: 12px; padding: 8px 0; line-height: 1.6; }
+
+.files__item {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.files__item:hover { background: #f7fafb; border-color: var(--line); }
+
+.files__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.files__name {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files__meta { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/*
+  每行的「替换 / 删除」按钮：
+  默认隐藏、鼠标悬停（或键盘聚焦）时才出现。左侧栏本来就只有 300px，
+  常显两个按钮会把文件名挤成省略号，反而看不清点的是哪个文件。
+  触摸屏没有 hover，所以用 @media (hover: none) 让它们常显。
+*/
+.files__actions {
+  display: none;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.files__item:hover .files__actions,
+.files__item:focus-within .files__actions { display: flex; }
+
+@media (hover: none) {
+  .files__actions { display: flex; }
+}
+
+/* 项目库被配置成只读时，右上角给一条明确说明，别让学生以为是按钮坏了 */
+.library__readonly {
+  font-size: 11px;
+  color: var(--warn);
+  margin: 0 0 6px;
+  line-height: 1.6;
+}
+
+/* 文件数超上限时的提示 */
+.library__more { font-size: 11px; color: var(--warn); margin: 6px 0 0; }
+
+/* ==========================================================================
+   6. 代码展示
+   ========================================================================== */
+.code-wrap {
+  position: relative;      /* 编辑器用绝对定位铺满它，所以这里必须有定位上下文 */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fbfcfd;
+}
+
+.code {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  tab-size: 4;
+}
+
+/* 结果区里的代码块：高度受限，避免把页面撑太长 */
+.code--result {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fbfcfd;
+}
+
+/* ---------- 6.2 代码区占位提示（用 CSS 类控制显隐）----------
+   需求：显隐一律靠加/减 `hidden` 类，JS 不修改提示文字，也不直接改 display。
+   这样"什么条件下显示"这件事只有一个来源（JS 里的 hasCode 状态），
+   样式与其表现完全解耦，改文案/改样式都不用碰逻辑。
+
+   权重说明：`.placeholder.hidden`（两个类）比 `.placeholder`（一个类）权重高，
+   所以下面的 display:none 能稳定压住上面的 display:block，不需要 !important。
+   另外全局还有一条 `.hidden { display: none !important }` 兜底（见文件顶部），
+   保证任何元素加上这个类都会隐藏，不会出现"某个卡片自带 display:flex 就藏不掉"的问题。
+   ------------------------------------------------------------------------- */
+.placeholder {
+  display: block;              /* 默认状态：显示 */
+  height: 100%;
+  min-height: 140px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* 隐藏状态：JS 加上 hidden 类即可（有代码时） */
+.placeholder.hidden { display: none; }
+
+.placeholder p { margin: 0; }
+.placeholder__hint { font-size: 12px; margin-top: 6px !important; }
+
+/* 代码块默认隐藏（页面加载时还没有代码），由 JS 在载入代码后去掉 hidden 类 */
+.code.hidden { display: none; }
+
+/* 拖拽区 C：中间代码预览区拖入时的反馈。
+   注意用 outline 而不是 border：border 会改变盒模型尺寸，拖拽时页面会抖。 */
+.code-wrap.is-over {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: #f2f9fb;
+}
+
+/* 空状态提示（结果区在用；代码区已改用 .placeholder） */
+.empty {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  height: 100%;
+  min-height: 140px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.empty p { margin: 0; }
+.empty__hint { font-size: 12px; }
+
+/* ---------- 6.3 在线编辑器 ----------
+   结构：左边一条行号槽（.editor__gutter）+ 右边的 textarea（.editor__area）。
+   行号槽本身不滚动，靠 JS 在 textarea 滚动时同步平移，两边永远对齐。
+   编辑器整体绝对定位铺满 .code-wrap，这样它和只读代码块共用同一个高度，
+   调高度的那根水平分隔条不用为编辑模式做任何特殊处理。 */
+.editor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: #fbfcfd;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.editor__gutter {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: 12px 8px 12px 12px;
+  text-align: right;
+  color: var(--text-faint);
+  background: #f4f7f9;
+  border-right: 1px solid var(--line);
+  overflow: hidden;              /* 超出的行号被裁掉，滚动由 transform 模拟 */
+  user-select: none;             /* 选中代码时不该把行号也选进去 */
+  white-space: pre;
+}
+
+.editor__area {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 0;
+  outline: none;
+  resize: none;                  /* 高度由分隔条控制，不要浏览器那个小三角 */
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  tab-size: 4;
+  white-space: pre;              /* 长行横向滚动，不折行——折行会让行号对不上 */
+  overflow: auto;
+}
+
+/* 编辑中的代码区：加一圈强调色，学生一眼知道"现在改的是会存盘的东西" */
+.code-wrap.is-editing {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: #fdfefe;
+}
+
+/* ==========================================================================
+   7. 结果展示
+   ========================================================================== */
+.result { display: flex; flex-direction: column; gap: 10px; }
+
+.section-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.result__note {
+  margin: 0;
+  padding: 9px 11px;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+/* ---------- 7.1 评分 ---------- */
+.score { display: flex; align-items: center; gap: 14px; }
+
+/* 用 conic-gradient 画评分圆环，不需要额外图片或 JS 绘图 */
+.score__circle {
+  --pct: 0;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--accent) calc(var(--pct) * 1%), #e8edf2 0);
+  flex-shrink: 0;
+}
+
+.score__value {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.score__meta { flex: 1; min-width: 0; }
+.score__level { font-size: 15px; font-weight: 600; }
+.score__summary { margin: 4px 0 0; font-size: 13px; color: var(--text-dim); }
+
+/* ---------- 7.2 问题列表 ---------- */
+.issues, .changes, .highlights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue, .change {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  background: #fff;
+}
+
+/* 按严重程度给左边框上色，一眼看出轻重 */
+.issue--error { border-left-color: var(--error); background: var(--error-soft); }
+.issue--warning { border-left-color: var(--warn); background: var(--warn-soft); }
+.issue--info { border-left-color: var(--info); background: var(--info-soft); }
+
+.issue__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.issue__title { font-weight: 600; font-size: 13px; }
+.issue__line { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.issue__detail { margin: 5px 0 0; font-size: 12.5px; color: var(--text-dim); }
+
+/* 修改建议：用等宽字体 + 浅底，和正文区分开 */
+.issue__suggestion {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.highlights li {
+  padding: 5px 0 5px 20px;
+  position: relative;
+  font-size: 13px;
+  color: var(--ok);
+}
+
+/* 用 ::before 画对勾，省掉图标文件 */
+.highlights li::before {
+  content: "✓";
+  position: absolute;
+  left: 4px;
+  font-weight: 700;
+}
+
+/* ---------- 7.3 改错对比 ---------- */
+/* 说明：改错理由的标题沿用了 .issue__title（与问题清单保持一致的视觉语言），
+   所以这里不再单独定义 .change__reason——那条规则从来没被任何代码用到。 */
+.change__diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.change__side {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.change__side--before { background: var(--error-soft); color: #8a2b20; }
+.change__side--after { background: var(--ok-soft); color: #1f5c3d; }
+
+/* ==========================================================================
+   8. 按钮、徽章、提示
+   ========================================================================== */
+.btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  padding: 8px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+}
+
+.btn:hover:not(:disabled) { background: #f7fafb; border-color: #cfd9e3; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn--primary:hover:not(:disabled) { background: #286a79; border-color: #286a79; }
+
+.btn--accent { background: var(--info); border-color: var(--info); color: #fff; }
+.btn--accent:hover:not(:disabled) { background: #255ea0; border-color: #255ea0; }
+
+.btn--warn { background: var(--warn); border-color: var(--warn); color: #fff; }
+.btn--warn:hover:not(:disabled) { background: #9c6619; border-color: #9c6619; }
+
+/* 危险操作（删除）：平时是描边样式，不抢眼；悬停才变红，提醒"这一下不可逆" */
+.btn--danger { background: #fff; border-color: #e6c3c3; color: var(--error); }
+.btn--danger:hover:not(:disabled) { background: var(--error); border-color: var(--error); color: #fff; }
+
+.btn--ghost { background: #fff; }
+.btn--block { width: 100%; justify-content: center; margin-top: 6px; }
+.btn--mini { padding: 2px 7px; font-size: 12px; }
+
+.btn__icon { font-size: 14px; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.actions__hint { font-size: 12px; color: var(--text-faint); }
+
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge--muted { background: #eef1f5; color: var(--text-dim); }
+.badge--accent { background: var(--accent-soft); color: var(--accent); }
+.badge--ok { background: var(--ok-soft); color: var(--ok); }
+.badge--off { background: var(--warn-soft); color: var(--warn); }
+/* 「未保存」标记：闪烁一下，学生会注意到自己还有没保存的修改 */
+.badge--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  animation: badge-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* 提示条：固定在底部中间，2.5 秒后自动消失（见 app.js） */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 22px;
+  background: #24313d;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.18);
+  z-index: 50;
+  max-width: 80vw;
+  text-align: center;
+}
+
+.toast--error { background: var(--error); }
+.toast--ok { background: var(--ok); }
+
+/* ==========================================================================
+   11. 确认弹窗（删除等不可逆操作前的二次确认）
+   遮罩铺满视口并压暗背景，把注意力集中到弹窗上；点遮罩或按 Esc 都算取消。
+   ========================================================================== */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 24, 40, 0.42);
+  z-index: 60;
+}
+
+.modal__box {
+  width: min(420px, 100%);
+  padding: 18px 20px 16px;
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.24);
+}
+
+.modal__title { font-size: 15px; margin: 0 0 8px; }
+
+/* 说明文字里会带文件路径，允许长路径换行，避免撑破弹窗 */
+.modal__text {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.7;
+  margin: 0 0 16px;
+  word-break: break-all;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 提示块（用于"没有发现错误"这类正向反馈） */
+.callout {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.callout--ok { background: var(--ok-soft); color: var(--ok); }
+
+/* ==========================================================================
+   9. 窄屏适配
+   窗口变窄时收成两栏（左栏 + 代码区），再窄则单栏堆叠。
+
+   注意：这两条规则必须跟着栅格一起改——栅格现在是 5 列
+   （栏 ｜ 分隔条 ｜ 栏 ｜ 分隔条 ｜ 栏），如果只改列数不隐藏分隔条，
+   那些 8px 的空 div 会各自占掉一格，把三栏挤成错位的样子。
+   所以窄屏下**先把分隔条藏掉**，再改列数。
+   ========================================================================== */
+@media (max-width: 1280px) {
+  /* 两栏：左侧栏 + 代码区；右侧结果区挪到下一行占满宽度 */
+  .layout {
+    grid-template-columns: var(--sidebar-w) minmax(var(--main-min), 1fr);
+  }
+  .resizer--col { display: none; }      /* 两栏时没有横向可拖的空间 */
+  .pane:last-of-type { grid-column: 1 / -1; }
+}
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .resizer { display: none; }           /* 单栏时任何分隔条都没有意义 */
+  .sidebar, .pane { overflow: visible; }
+  .sidebar { max-height: none; }
+  .change__diff { grid-template-columns: 1fr; }
+}
+
+/* ---------- 9.1 代码区高度（需求三第 3 条） ---------- */
+/* 默认 code-wrap 是 flex:1，自动铺满卡片剩余高度；
+   用户拖动过水平分隔条之后，JS 会加上 .is-height-fixed 并给出 --code-height，
+   这时才改用固定高度——这样"没拖过"时仍然是自适应，
+   "拖过"之后才由用户说了算。 */
+.code-wrap.is-height-fixed {
+  flex: 0 0 auto;
+  height: var(--code-height, 320px);
+}

@@ -1,0 +1,40 @@
+# 环境与密钥
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行期数据（SQLite / 向量索引 / 沙箱工作区 / 克隆仓库 / 嵌入模型缓存）
+data/*.db
+data/index/
+data/workspaces/
+data/repos/
+# 本地项目库 = 文件自动分类的根目录（同一目录，见 README「数据存在哪」）：
+# 装的是学生自己放进来的作业，以及按语言归档出来的 c/ java/ python/，属于个人文件，不入库
+data/library/
+# 嵌入模型权重数百 MB，不入库（首次运行自动下载，见 config.RetrievalSettings）
+data/models/
+
+# 覆盖率与构建产物
+.coverage
+htmlcov/
+coverage.xml
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+
+# 本地工作文档（参赛材料草稿、随手记的测试文档等）：
+# 默认不公开。想让某个文档进仓库，就把下面这行注释掉/删掉。
+测试.docx
+*.docx.bak
+

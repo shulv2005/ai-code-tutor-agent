@@ -1,0 +1,127 @@
+@echo off
+REM ===========================================================================
+REM  [ENCODING RULE - PLEASE DO NOT BREAK IT]
+REM
+REM  chcp MUST be the first command after "@echo off", and NO Chinese text may
+REM  appear above it. See start.bat for the full explanation.
+REM ===========================================================================
+chcp 936 >nul
+
+REM ===========================================================================
+REM  AI 代码导师系统 —— 停止服务脚本（Windows）
+REM
+REM  作用：关闭由 start.bat 启动的后端服务。
+REM        当服务窗口被直接关掉、或 Ctrl+C 没生效时，
+REM        后台可能还残留着 python 进程占着端口，用本脚本清理即可。
+REM
+REM  文件编码：GBK/ANSI，与上面切换的 936（简体中文）代码页保持一致。
+REM ===========================================================================
+
+REM 开启延迟变量展开，便于在 if 块里使用刚赋值的变量
+setlocal enabledelayedexpansion
+
+title AI 代码导师系统 - 停止服务
+cd /d "%~dp0"
+
+REM 监控的端口，必须与 start.bat 里的 APP_PORT 保持一致
+set "APP_PORT=8000"
+
+echo.
+echo ===========================================================================
+echo    AI 代码导师系统  ——  正在停止服务
+echo ===========================================================================
+echo.
+
+REM ===========================================================================
+REM  第 1 步：找出正在监听目标端口的进程
+REM  netstat -ano        列出所有网络连接，-o 表示同时显示进程编号 PID
+REM  findstr ":8000 "    只留下端口是 8000 的行
+REM  findstr "LISTENING" 只留下「正在监听」的行（排除已建立的连接）
+REM  tokens=5            取第 5 列，也就是 PID
+REM ===========================================================================
+echo [1/3] 正在查找占用端口 %APP_PORT% 的进程...
+
+set "TARGET_PID="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%APP_PORT% " ^| findstr "LISTENING"') do set "TARGET_PID=%%p"
+
+REM 没找到，说明服务本来就没运行，不必当成错误
+if not defined TARGET_PID (
+    echo       没有发现正在运行的服务（端口 %APP_PORT% 是空闲的）。
+    echo       无需停止。
+    echo.
+    pause
+    exit /b 0
+)
+
+echo       找到进程 PID = !TARGET_PID!
+
+REM ===========================================================================
+REM  第 2 步：确认这个进程确实是 Python 服务
+REM  安全检查：万一端口被别的程序占用，绝不能贸然杀掉它
+REM ===========================================================================
+echo.
+echo [2/3] 正在确认该进程的类型...
+
+set "PROC_NAME="
+REM /FO CSV 的输出形如 "python.exe","5352","Console","1","111,016 K"
+REM 它是逗号分隔且不含空格，因此必须显式指定 delims=,
+REM 否则 tokens=1 会取到整行，%%~n 只能剥掉最外层引号，得到一串乱码。
+for /f "tokens=1 delims=," %%n in ('tasklist /FI "PID eq !TARGET_PID!" /NH /FO CSV 2^>nul') do set "PROC_NAME=%%~n"
+
+REM 判断进程名里是否包含 python（兼容 python.exe / pythonw.exe）
+set "IS_PYTHON="
+echo !PROC_NAME! | findstr /i "python" >nul && set "IS_PYTHON=1"
+
+if not defined IS_PYTHON (
+    echo.
+    echo   [警告] 占用端口 %APP_PORT% 的进程是「!PROC_NAME!」，不是 Python 服务。
+    echo          为了安全，本脚本不会结束它。
+    echo.
+    echo   如果你确认需要释放这个端口，请手动处理：
+    echo     1. 按 Ctrl+Shift+Esc 打开任务管理器
+    echo     2. 找到编号为 !TARGET_PID! 的进程，右键结束任务
+    echo.
+    pause
+    exit /b 1
+)
+
+echo       确认是 Python 服务进程（!PROC_NAME!），可以安全结束。
+
+REM ===========================================================================
+REM  第 3 步：结束进程
+REM  /PID 指定进程编号，/F 表示强制结束，/T 表示连子进程一起结束
+REM ===========================================================================
+echo.
+echo [3/3] 正在停止服务...
+
+taskkill /PID !TARGET_PID! /F /T >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   [错误] 结束进程失败，通常是权限不足。
+    echo          解决办法：右键点击 stop.bat，选择「以管理员身份运行」。
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 稍等一下，让系统把端口释放干净。
+REM 这里用 ping 而不是 timeout：timeout 在输入被重定向的环境下
+REM （例如被别的脚本调用）会直接报「不支持输入重新定向」并退出。
+ping -n 3 127.0.0.1 >nul
+
+REM 复查端口是否真的释放了
+set "STILL_BUSY="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%APP_PORT% " ^| findstr "LISTENING"') do set "STILL_BUSY=%%p"
+
+echo.
+if defined STILL_BUSY (
+    echo   [警告] 端口 %APP_PORT% 仍然被占用（PID = !STILL_BUSY!），请稍后重试。
+) else (
+    echo ===========================================================================
+    echo    服务已成功停止，端口 %APP_PORT% 已释放。
+    echo ===========================================================================
+)
+
+echo.
+pause
+endlocal

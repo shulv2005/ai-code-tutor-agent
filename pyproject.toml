@@ -1,0 +1,101 @@
+[project]
+name = "opensource-collab-agent"
+version = "0.1.0"
+description = "面向开源项目新贡献者的 AI 协作智能体：测试、修复与贡献链路"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "python-dotenv>=1.0.1",
+    # 前端上传代码文件用（FastAPI 解析 multipart/form-data 必需）
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0.30",
+    "aiosqlite>=0.20.0",
+    "httpx>=0.27.0",
+    # 通用 LLM 客户端（app/core/llm_client.py）：官方 SDK，负责鉴权头、
+    # 超时与 SSE 流式解析；项目自管重试与错误映射（见该文件模块注释）
+    "openai>=1.40.0",
+    # Step 2 仓库解析：Git 操作 + 多语言语法解析
+    "GitPython>=3.1.43",
+    "tree-sitter>=0.23",
+    # 注意：语法包必须用「自带编译产物」的独立 wheel（tree-sitter-python 等）。
+    # 不要用 tree-sitter-language-pack —— 它在运行时从 GitHub 下载 parsers.json
+    # 与语法动态库，内网/离线/CI 环境会直接 DownloadError 超时失败。
+    # c 与 java 是「AI 代码导师」面向的学习语言。
+    "tree-sitter-python>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-go>=0.23",
+    "tree-sitter-c>=0.23",
+    "tree-sitter-java>=0.23",
+    # Step 3 混合检索：BM25 关键词召回 + FAISS 向量召回
+    "rank_bm25>=0.2.2",
+    "faiss-cpu>=1.8",
+    "numpy>=1.26",
+    # fastembed 走 ONNX Runtime，避免 sentence-transformers 带来的 ~2GB PyTorch 依赖。
+    # 首次使用需下载模型，公网 huggingface.co 不可达时靠 HF_ENDPOINT 镜像 +
+    # HF_HUB_DISABLE_XET=1（见 app/services/retrieval/embedder.py）。
+    "fastembed>=0.4",
+    "jieba>=0.42",
+    # Step 5 沙箱：Docker SDK（sandbox.py 里是延迟导入，缺了会自动降级为本地子进程，
+    # 但那样就**没有隔离能力**了，所以正式安装时应当带上）
+    "docker>=7.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    # coverage 既是开发工具，也是本地沙箱后端的运行期依赖
+    # （Docker 后端则装在镜像里，见 docker/sandbox.Dockerfile）
+    "coverage>=7.5.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# e2e_test.py 必须先设置环境变量再导入 app（配置在导入时读取），
+# 因此模块级 import 只能位于 env 设置之后，E402 是刻意为之。
+"tests/e2e_test.py" = ["E402", "ASYNC221"]
+# 测试文件里大量中文 docstring/断言消息，硬折行会显著降低可读性；
+# 测试内的 subprocess 调用是刻意的（验证"生成的测试真能跑"）。
+"tests/*" = ["E501", "ASYNC240", "ASYNC221"]
+# ASYNC240：Path.exists()/stat() 这类瞬时系统调用放事件循环里可以接受；
+# 真正耗时的 IO（git 克隆、嵌入、pytest 执行）已统一用 asyncio.to_thread 包装。
+# ASYNC109：沙箱 run() 的 timeout 参数是传给容器/pytest 的语义参数，
+# 不是 asyncio 超时，属于设计如此。
+"app/services/sandbox.py" = ["ASYNC240", "ASYNC109"]
+"app/services/repo/service.py" = ["ASYNC240"]
+"app/api/v1/endpoints/agent.py" = ["ASYNC240"]
+# B008：ruff 认为「函数调用不应出现在参数默认值里」，这条规则适用于普通函数，
+# 但 FastAPI 的文件上传**必须**写成 `file: UploadFile = File(...)`——
+# 依赖注入靠的就是这个默认值。官方推荐写法与 B008 冲突，故对本文件豁免。
+"app/api/v1/endpoints/tutor.py" = ["B008"]
+# 同理：`payload: FileScanRequest | None = Body(default=None)` 让请求体可选
+# （不带 body 直接 POST /files/scan 也要能用），这是 FastAPI 的官方写法。
+"app/api/v1/endpoints/files.py" = ["B008"]
+# tools/ 下是人工验收脚本，不是产品代码：
+#   E501：大量中文 print 语句，硬折行会把"逐行对齐的输出"折得看不清；
+#   E402：check_frontend.py 必须先把项目根目录插进 sys.path 才能 import app。
+"tools/*" = ["E501", "E402"]
+

@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  AI 代码导师 · 学生端页面
+
+  这是整个页面唯一的主文件，配套资源：
+    css/style.css        样式（配色、布局、卡片、代码高亮）
+    js/app.js            全部交互逻辑（上传、调用后端、渲染结果）
+    vendor/highlight.*   语法高亮库（已下载到本地，教室没网也能用）
+
+  页面分区（从上到下、从左到右）：
+    ① 顶部栏      标题 + AI 服务状态
+    ② 左侧栏      文件选择  ⁄  本地项目库  ⁄  代码分类结果  ⁄  历史记录
+    ③ 中间主区    代码展示（带语法高亮）
+    ④ 右侧结果区  检测报告  ⁄  注释结果  ⁄  改错对比
+
+  与后端对接：全部通过 fetch 调用 /api/v1/tutor/* 与 /api/v1/library/* 接口，
+  具体见 js/app.js 顶部的 API 配置区。
+  ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- 让页面在手机上也能正常缩放 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 代码导师 · 学生练习台</title>
+
+  <!-- 语法高亮样式（本地文件，不依赖网络） -->
+  <link rel="stylesheet" href="vendor/github.min.css" />
+  <!-- 页面自身样式 -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+  <!-- ======================================================================
+       ① 顶部栏：标题 + AI 服务状态徽章
+       状态徽章由 js/app.js 请求 /api/v1/tutor/status 后填充，
+       如果后端没配置大模型，会显示"AI 未启用"并禁用三个 AI 按钮。
+       ====================================================================== -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="topbar__logo">AI</span>
+      <div>
+        <h1 class="topbar__title">AI 代码导师</h1>
+        <p class="topbar__subtitle">上传你的代码，让 AI 帮你检查、加注释、改错误</p>
+      </div>
+    </div>
+
+    <div class="topbar__status">
+      <!-- 语言支持提示：由 JS 填入，例如「支持 C / Java / Python」 -->
+      <span class="badge badge--muted" id="langBadge">正在检测服务…</span>
+      <!-- AI 可用性徽章：ai-ok 表示可用，ai-off 表示未配置 -->
+      <span class="badge badge--muted" id="aiBadge">AI 状态未知</span>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       页面主体：三栏布局（左侧栏 / 代码区 / 结果区）
+       ====================================================================== -->
+  <main class="layout">
+
+    <!-- ====================================================================
+         ② 左侧栏
+         ==================================================================== -->
+    <aside class="sidebar">
+
+      <!-- ====================================================================
+           ⓞ 模型设置（选模型 + 填自己的 API Key）
+           --------------------------------------------------------------------
+           · 模型清单来自 GET /api/v1/models/list（后端 .env 里配了哪些模型就有哪些）；
+           · Key 通过 POST /api/v1/auth/set_key 存进**服务端内存会话**，
+             前端只在 JS 变量里记住会话号，**不写 localStorage**；
+           · 「保存并测试」会真的拿这把 Key 调一次 AI 检测，成功才说"已连接"——
+             只保存不测试的话，Key 写错了要等学生点了检测才发现。
+           ==================================================================== -->
+      <section class="card" id="modelCard">
+        <h2 class="card__title">
+          模型设置
+          <!-- 重新拉一次模型清单（比如后端刚改了 .env 里的模型列表） -->
+          <button class="btn btn--mini" id="refreshModels" title="重新读取模型清单">↻</button>
+        </h2>
+
+        <!-- 模型下拉框：JS 按 /models/list 的结果填充 -->
+        <label class="field">
+          <span class="field__label">使用哪个模型</span>
+          <select class="input" id="modelSelect">
+            <option value="">（正在读取模型清单…）</option>
+          </select>
+        </label>
+
+        <!--
+          API Key 输入框：type="password" 默认隐藏字符，
+          右边的「显示」按钮临时切换成明文（学生确认自己没粘错）。
+        -->
+        <label class="field">
+          <span class="field__label">我的 API Key</span>
+          <span class="key-input">
+            <input class="input" type="password" id="modelApiKey"
+                   placeholder="粘贴你的 Key（如 sk-…）"
+                   autocomplete="off" autocorrect="off" spellcheck="false" />
+            <button class="btn btn--mini" type="button" id="toggleKeyVisible"
+                    title="显示 / 隐藏 Key">显示</button>
+          </span>
+        </label>
+
+        <!-- 当前模型的说明（去哪申请 Key / 本地模型免 Key），由 JS 填入 -->
+        <p class="model-hint" id="modelHint"></p>
+
+        <!-- 两个操作按钮 -->
+        <div class="model-actions">
+          <button class="btn btn--primary btn--block" id="saveModelKey" type="button">
+            保存并测试
+          </button>
+          <button class="btn btn--ghost btn--block" id="clearModelKey" type="button">
+            清除 Key
+          </button>
+        </div>
+
+        <!-- 状态提示：未连接 / 已连接 xxx / Key 无效 …（含小圆点） -->
+        <p class="model-status" id="modelStatus">
+          <span class="model-status__dot" aria-hidden="true"></span>
+          <span id="modelStatusText">正在读取模型清单…</span>
+        </p>
+      </section>
+
+      <!-- ---------- 2.1 选择代码文件 ---------- -->
+      <section class="card">
+        <h2 class="card__title">① 选择你的代码</h2>
+
+        <!--
+          拖拽区 A：点击选择文件，或把文件拖到这里
+          —— 语义是「打开看看」：只把代码载入中间预览区并跑分析，**不入库**。
+        -->
+        <div class="dropzone" id="dropzone">
+          <div class="dropzone__icon">＋</div>
+          <p class="dropzone__text">点击选择文件，或把文件拖到这里</p>
+          <p class="dropzone__hint">支持 .c / .h / .java / .py / .js / .go</p>
+          <!-- 真正的文件输入框被隐藏，由上面的 dropzone 代理点击 -->
+          <input type="file" id="fileInput" accept=".c,.h,.java,.py,.js,.go,.txt" hidden />
+        </div>
+
+        <!-- 手动粘贴代码的入口（没有文件时也能练） -->
+        <details class="paste">
+          <summary>没有文件？直接粘贴代码</summary>
+          <input type="text" id="pasteName" class="input" value="demo.py"
+                 placeholder="文件名（含扩展名，用于识别语言）" />
+          <textarea id="pasteCode" class="textarea" rows="6"
+                    placeholder="把代码粘贴到这里…"></textarea>
+          <button class="btn btn--ghost btn--block" id="pasteBtn">使用这段代码</button>
+        </details>
+      </section>
+
+      <!-- ---------- 2.2 本地项目库 ---------- -->
+      <section class="card">
+        <h2 class="card__title">
+          ② 本地项目库
+          <!-- 重新扫描：学生把新作业放进文件夹后点一下就能看到 -->
+          <button class="btn btn--mini" id="refreshLibrary" title="重新扫描">↻</button>
+        </h2>
+
+        <!--
+          拖拽区 B：把文件拖到这里 = **加入项目库**（会真的存到服务器上的文件夹里）
+          与拖拽区 A 的区别就在这里：
+            · A（① 选择你的代码）：只看一眼，不改动任何东西
+            · B（本区域）        ：入库 + 按语言归档 + 更新下面这份列表
+          这个区别在界面上必须写清楚，否则学生分不清"我到底交没交作业"。
+        -->
+        <div class="dropzone dropzone--library" id="libraryDropzone">
+          <p class="dropzone__text">把作业拖到这里 → 加入项目库</p>
+          <p class="dropzone__hint">会保存到服务器的代码文件夹，并按语言自动归类</p>
+        </div>
+
+        <!--
+          项目库文件夹路径（常显，不随文件数量增减而出现/消失）：
+          这是使用中被问得最多的一个问题——"我的代码到底存在电脑的哪个文件夹？"
+          所以这里始终显示后端真实配置的绝对路径，并提供「复制」按钮，
+          学生可以直接粘到文件资源管理器的地址栏里打开那个文件夹。
+          路径文字由 JS 的 renderLibraryPath() 用 /api/v1/library/scan 返回的 roots 填入。
+        -->
+        <p class="library__path">
+          <span class="library__path-label">项目库文件夹</span>
+          <!-- title 里放完整路径：路径太长被 CSS 截断时，鼠标悬停仍能看到全部 -->
+          <code class="library__path-value" id="libraryPathValue" title="正在读取…">正在读取…</code>
+          <button class="btn btn--mini" id="copyLibraryPath" type="button"
+                  title="复制完整路径">复制</button>
+        </p>
+
+        <!-- 提示文字：由 JS 填入实际扫描的文件夹路径 -->
+        <p class="library__hint" id="libraryHint">正在扫描本地代码…</p>
+
+        <!--
+          只读模式说明：后端配了 LIBRARY__ALLOW_WRITE=false 时由 JS 显示。
+          只读就明明白白写出来——否则学生点不到「替换 / 删除」，
+          会以为是页面坏了。
+        -->
+        <p class="library__readonly hidden" id="libraryReadOnlyHint"></p>
+
+        <!-- 语言筛选按钮：JS 按扫描结果生成，例如「全部 12 / C 5 / Java 4 / Python 3」 -->
+        <div class="chips" id="libraryChips"></div>
+
+        <!-- 文件列表：点击某一项即把该文件载入中间代码区 -->
+        <ul class="files" id="libraryList">
+          <li class="files__empty">正在扫描…</li>
+        </ul>
+
+        <!-- 文件数达到上限时的提示 -->
+        <p class="library__more" id="libraryMore" hidden></p>
+      </section>
+
+      <!-- ---------- 2.3 代码分类结果 ---------- -->
+      <section class="card" id="classifyCard" hidden>
+        <h2 class="card__title">③ 自动分类结果</h2>
+        <!-- 由 JS 填充：语言、行数、函数与类的数量 -->
+        <dl class="kv" id="classifyList"></dl>
+        <!-- 代码结构（函数/类清单），可展开查看 -->
+        <details class="structure" id="structureBox" hidden>
+          <summary>查看代码结构</summary>
+          <ul class="structure__list" id="structureList"></ul>
+        </details>
+      </section>
+
+      <!-- ---------- 2.4 历史记录 ---------- -->
+      <section class="card card--grow">
+        <h2 class="card__title">
+          ④ 历史记录
+          <button class="btn btn--mini" id="refreshHistory" title="刷新">↻</button>
+        </h2>
+        <!-- 历史列表由 JS 从 /api/v1/tutor/history 拉取 -->
+        <ul class="history" id="historyList">
+          <li class="history__empty">还没有记录，先上传一段代码试试</li>
+        </ul>
+      </section>
+    </aside>
+
+    <!--
+      ========================================================================
+      垂直分隔条 ①：拖动它调整「左侧栏」宽度（需求三第 1、2 条）
+      · role="separator" + tabindex 是为了键盘也能调（方向键，见 js）
+      · 鼠标悬停/拖动时样式变成 col-resize（CSS 里定义）
+      ========================================================================
+    -->
+    <div class="resizer resizer--col" id="resizerLeft"
+         role="separator" aria-orientation="vertical" tabindex="0"
+         title="拖动调整左侧栏宽度（也可聚焦后用 ← → 键）"></div>
+
+    <!-- ====================================================================
+         ③ 中间主区：代码展示
+         ==================================================================== -->
+    <section class="pane">
+      <div class="card card--grow" id="codeCard">
+        <h2 class="card__title">
+          <span id="codeTitle">代码预览</span>
+          <!-- 语言标签，例如 C / Python -->
+          <span class="badge badge--accent" id="codeLangBadge" hidden></span>
+          <!--
+            未保存标记：进入编辑后只要改过内容就显示，
+            避免学生写了一大段、以为自动保存了，刷新页面才发现白写。
+          -->
+          <span class="badge badge--warn" id="codeDirtyBadge" hidden>未保存</span>
+          <!-- 在线编辑：点「编辑」切到编辑模式，「保存 / 取消」才会出现 -->
+          <button class="btn btn--mini" id="codeEditBtn" title="在线编辑这段代码">编辑 ✎</button>
+          <button class="btn btn--mini btn--primary" id="codeSaveBtn"
+                  title="保存（Ctrl+S）" hidden>保存</button>
+          <button class="btn btn--mini" id="codeCancelBtn"
+                  title="放弃修改（Esc）" hidden>取消</button>
+          <!-- 清空按钮：清空后占位提示会重新出现（见 js 里的 setHasCode） -->
+          <button class="btn btn--mini" id="clearCodeBtn" title="清空代码">清空 ✕</button>
+        </h2>
+
+        <!--
+          拖拽区 C：中间代码预览区
+          —— 语义是「只想看看」：拖进来只预览 + 高亮，**不写入项目库**。
+          这样设计是为了避免误操作：学生往预览区一拖就把别人的作业塞进项目库，
+          列表会越来越乱；要入库必须明确拖到左边「② 本地项目库」的虚线框里。
+        -->
+        <div class="code-wrap" id="codeDropzone" data-min-height="120">
+          <!--
+            占位提示：没有代码时显示。
+            显隐完全由 CSS 类控制（.placeholder / .placeholder.hidden），
+            JS 只负责加减 hidden 类，**不修改里面的文字**。
+          -->
+          <div class="placeholder" id="code-placeholder">
+            <p>还没有代码</p>
+            <p class="placeholder__hint">
+              从左边选择文件、把文件拖到这里，或直接粘贴一段代码（Ctrl+V）
+            </p>
+          </div>
+          <!-- 代码块：有代码时才显示；同样是加/减 hidden 类来控制 -->
+          <pre class="code hidden" id="codeBlock"><code id="codeContent"></code></pre>
+
+          <!--
+            在线编辑器：与代码块互斥显示，只有点了「编辑」才出现。
+            · 用原生 <textarea>，不引入 CodeMirror 之类的编辑器：
+              少一份几百 KB 的依赖，断网也能用，输入法/快捷键行为与系统一致。
+            · 左侧行号由 JS 跟随滚动同步——AI 说"第 8 行有问题"时能直接对上。
+            · spellcheck="false"：否则中文注释和变量名会被浏览器画满红波浪线。
+          -->
+          <div class="editor hidden" id="editorWrap">
+            <div class="editor__gutter" id="editorGutter">1</div>
+            <textarea class="editor__area" id="codeEditor"
+                      spellcheck="false" wrap="off" autocomplete="off"
+                      autocapitalize="off" autocorrect="off"
+                      aria-label="代码编辑器"></textarea>
+          </div>
+        </div>
+
+        <!--
+          水平分隔条：拖动它调整「代码预览区」的高度（需求三第 3 条）
+          往下拖 = 代码区变高；往上拖 = 代码区变矮、按钮区跟着上移。
+        -->
+        <div class="resizer resizer--row" id="resizerCode"
+             role="separator" aria-orientation="horizontal" tabindex="0"
+             title="拖动调整代码区高度（也可聚焦后用 ↑ ↓ 键）"></div>
+
+        <!-- ---------- 操作按钮组 ---------- -->
+        <div class="actions" id="codeActions">
+          <!-- 三个 AI 按钮，点击后调用对应的后端接口 -->
+          <button class="btn btn--primary" id="btnCheck" data-action="check">
+            <span class="btn__icon">🔍</span> AI 检测
+          </button>
+          <button class="btn btn--accent" id="btnComment" data-action="comment">
+            <span class="btn__icon">💬</span> 生成注释
+          </button>
+          <button class="btn btn--warn" id="btnFix" data-action="fix">
+            <span class="btn__icon">🛠</span> 自动改错
+          </button>
+          <!-- 处理中的加载提示 -->
+          <span class="actions__hint" id="actionHint"></span>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      ========================================================================
+      垂直分隔条 ②：拖动它调整「右侧结果区」宽度
+      ========================================================================
+    -->
+    <div class="resizer resizer--col" id="resizerRight"
+         role="separator" aria-orientation="vertical" tabindex="0"
+         title="拖动调整右侧栏宽度（也可聚焦后用 ← → 键）"></div>
+
+    <!-- ====================================================================
+         ④ 右侧结果区：根据点击的按钮切换显示内容
+         ==================================================================== -->
+    <section class="pane">
+      <div class="card card--grow">
+        <h2 class="card__title">⑤ 分析结果</h2>
+
+        <!-- 默认空状态 -->
+        <div class="empty" id="resultEmpty">
+          <p>这里会显示分析结果</p>
+          <p class="empty__hint">点击上面的按钮开始</p>
+        </div>
+
+        <!-- ---------- 4.1 AI 检测结果 ---------- -->
+        <div class="result" id="resultCheck" hidden>
+          <!-- 评分圆环 + 等级 -->
+          <div class="score">
+            <div class="score__circle" id="scoreCircle">
+              <span class="score__value" id="scoreValue">--</span>
+            </div>
+            <div class="score__meta">
+              <div class="score__level" id="scoreLevel"></div>
+              <p class="score__summary" id="scoreSummary"></p>
+            </div>
+          </div>
+
+          <!-- 问题列表 -->
+          <h3 class="section-title">发现的问题</h3>
+          <ul class="issues" id="issueList"></ul>
+
+          <!-- 做得好的地方 -->
+          <div id="highlightBox" hidden>
+            <h3 class="section-title">做得好的地方</h3>
+            <ul class="highlights" id="highlightList"></ul>
+          </div>
+        </div>
+
+        <!-- ---------- 4.2 注释结果 ---------- -->
+        <div class="result" id="resultComment" hidden>
+          <p class="result__note" id="commentSummary"></p>
+          <h3 class="section-title">带注释的代码</h3>
+          <pre class="code code--result"><code id="commentCode"></code></pre>
+        </div>
+
+        <!-- ---------- 4.3 改错结果 ---------- -->
+        <div class="result" id="resultFix" hidden>
+          <p class="result__note" id="fixSummary"></p>
+
+          <!-- 没有错误时的友好提示 -->
+          <div class="callout callout--ok" id="fixNoError" hidden>
+            ✅ 这段代码没有发现明显错误，继续保持！
+          </div>
+
+          <div id="fixBody">
+            <h3 class="section-title">修改说明</h3>
+            <ul class="changes" id="changeList"></ul>
+
+            <h3 class="section-title">修正后的代码</h3>
+            <pre class="code code--result"><code id="fixCode"></code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================================================================
+       全局提示条：成功/失败的短暂提示，由 JS 控制显示
+       ====================================================================== -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- ======================================================================
+       替换文件用的隐藏选择器
+       ----------------------------------------------------------------------
+       点项目库列表里的「替换」时，JS 记下目标文件并触发这个 input；
+       学生选中本机文件后由 change 事件接手，把内容 PUT 回项目库。
+       不在每一行都放一个 <input type=file>：几十个文件就会多出几十个节点，
+       完全没有必要，一个共用的就够了。
+       ====================================================================== -->
+  <input type="file" id="replaceInput" hidden
+         accept=".c,.h,.cpp,.hpp,.cc,.java,.py,.js,.go,.ts,.cs,.rb,.php,.sql,.txt">
+
+  <!-- ======================================================================
+       确认弹窗：删除这类操作不可逆，必须让学生看清目标再点确定
+       ----------------------------------------------------------------------
+       没有用浏览器原生 confirm()：原生弹窗会把整个页面冻住、样式改不了，
+       而且返回的是同步结果，行为测试里没法编排。这里用 Promise 包一层。
+       ====================================================================== -->
+  <div class="modal hidden" id="confirmModal">
+    <div class="modal__box" role="dialog" aria-modal="true"
+         aria-labelledby="confirmTitle" aria-describedby="confirmText">
+      <h3 class="modal__title" id="confirmTitle">确认操作</h3>
+      <p class="modal__text" id="confirmText"></p>
+      <div class="modal__actions">
+        <button class="btn" id="confirmCancelBtn" type="button">取消</button>
+        <button class="btn btn--danger" id="confirmOkBtn" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================================
+       Vue 3 接入预留位
+       ----------------------------------------------------------------------
+       现在页面用原生 JS 实现，逻辑都在 js/app.js。
+       后续要换成 Vue 3 时，按下面三步做即可，后端接口完全不用改：
+
+       1) 引入 Vue（本地文件或 CDN 二选一）：
+          <script src="vendor/vue.global.prod.js"></script>
+
+       2) 把上面 <main> 里的内容整体挪进一个 <div id="app">，
+          并把 js/app.js 里的「渲染函数」改成 Vue 的模板 + reactive 数据。
+          数据结构可以直接复用：analyzeResult / checkResult /
+          commentResult / fixResult 这几个对象就是现成的 Vue data。
+
+       3) 在下面挂载：
+          <script>
+            const { createApp } = Vue
+            createApp({ setup() { /* 把 app.js 的逻辑搬进来 */ } }).mount('#app')
+          </script>
+
+       注意：现在没有用 Vue，所以不要引入 vue.global.js，
+       否则会多下载一份几百 KB 但用不上的文件。
+       ====================================================================== -->
+
+  <!-- 语法高亮库：本地文件，断网也能用 -->
+  <script src="vendor/highlight.min.js"></script>
+  <!-- 页面逻辑 -->
+  <script src="js/app.js"></script>
+</body>
+</html>

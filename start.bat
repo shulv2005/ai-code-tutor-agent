@@ -1,0 +1,304 @@
+@echo off
+REM [ENCODING RULE] chcp must be the first command and no non-ASCII text may
+REM appear above it, otherwise cmd.exe mis-decodes the file and breaks parsing.
+chcp 936 >nul
+
+REM ===========================================================================
+REM  【编码规则 —— 请勿破坏】
+REM
+REM  上面那行 chcp 必须紧跟在 @echo off 之后，且它上方不能出现任何中文。
+REM
+REM  原因：cmd.exe 是用「执行到 chcp 之前那一刻的控制台代码页」来解析整个
+REM        批处理文件的。如果 chcp 上方就有中文，这些字节会被按错误编码
+REM        解析，cmd 的文件读取位置随之错乱，导致后面整份脚本都解析失败，
+REM        表现为刷屏报错「不是内部或外部命令」。
+REM
+REM  所以：所有中文都放在 chcp 那一行下面。
+REM ===========================================================================
+
+REM ===========================================================================
+REM  AI 代码导师系统 —— 一键启动脚本（Windows）
+REM
+REM  作用：双击本文件，自动完成下面 5 件事：
+REM        1. 检查电脑是否装了 Python，版本够不够
+REM        2. 创建项目专用的虚拟环境（不会影响电脑里其它 Python 项目）
+REM        3. 安装项目需要的第三方库
+REM        4. 检查端口有没有被占用
+REM        5. 启动后端服务，并自动打开浏览器
+REM
+REM  文件编码：GBK/ANSI，与上面切换的 936（简体中文）代码页保持一致。
+REM            用记事本编辑时请选择「ANSI」编码保存；
+REM            用 VS Code 编辑时请在右下角选择 GB2312 或 GBK。
+REM ===========================================================================
+
+REM 开启「延迟变量展开」：允许在 if / for 代码块内部读取刚赋值的变量
+setlocal enabledelayedexpansion
+
+REM 清掉可能从系统里继承来的 Python 编码设置。
+REM 如果外部设过 PYTHONIOENCODING=utf-8，Python 会按 UTF-8 输出到 GBK 控制台，
+REM 日志里的中文就会变成乱码。清空后 Python 会自动跟随控制台代码页（936）。
+set "PYTHONIOENCODING="
+set "PYTHONUTF8="
+
+REM 把窗口标题改成中文，方便在任务栏里辨认
+title AI 代码导师系统 - 启动中
+
+REM 切换到脚本所在目录（%~dp0 表示本文件所在的文件夹）
+REM 这样不管从哪里双击，工作目录都是对的
+cd /d "%~dp0"
+
+REM ===========================================================================
+REM  配置区：只需要改端口或地址时，改这里的几行就够了
+REM ===========================================================================
+set "VENV_DIR=.venv"                    REM 虚拟环境文件夹
+set "REQ_FILE=requirements.txt"         REM 依赖清单文件
+set "APP_HOST=127.0.0.1"                REM 监听地址（只允许本机访问）
+set "APP_PORT=8000"                     REM 监听端口
+set "APP_URL=http://%APP_HOST%:%APP_PORT%"
+
+REM 启动完成后自动打开的网页地址
+REM 根路径会自动跳转到学生前端页面（frontend/index.html）
+set "OPEN_URL=%APP_URL%"
+
+REM 安装依赖时使用的镜像源（国内下载更快）
+REM 如果这个镜像在你那里访问不了，脚本会自动回退到官方源，无需手动改
+set "PIP_INDEX=https://mirrors.aliyun.com/pypi/simple/"
+set "PIP_FALLBACK=https://pypi.org/simple"
+REM 单次下载超时与重试次数：避免网络不通时卡住很久
+set "PIP_OPTS=--timeout 60 --retries 2"
+
+echo.
+echo ===========================================================================
+echo    AI 代码导师系统  ——  正在启动
+echo ===========================================================================
+echo.
+
+REM ===========================================================================
+REM  第 1 步：检查 Python 是否安装、版本是否够用
+REM ===========================================================================
+echo [1/5] 正在检查 Python 环境...
+
+set "PY_CMD="
+
+REM 选择 Python 的顺序很关键。电脑上可能装了多个 Python，
+REM py -3 会挑「最新」的那个（例如 3.14），但部分第三方库
+REM （faiss-cpu、fastembed 等）还没有为新版本提供预编译包，
+REM 会导致依赖安装失败。所以优先选本项目验证过的成熟版本。
+
+REM ① 优先用 PATH 上的 python：通常是学生按教程安装并勾选了 Add to PATH 的那个
+python --version >nul 2>&1
+if not errorlevel 1 set "PY_CMD=python"
+
+REM ② 其次用 py 启动器指定 3.11 / 3.12 —— 本项目在这两个版本上验证通过
+if not defined PY_CMD (
+    py -3.11 --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=py -3.11"
+)
+if not defined PY_CMD (
+    py -3.12 --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=py -3.12"
+)
+
+REM ③ 最后才退回 py -3（可能选到过新的版本，见上面的说明）
+if not defined PY_CMD (
+    py -3 --version >nul 2>&1
+    if not errorlevel 1 set "PY_CMD=py -3"
+)
+
+REM 四种方式都找不到，说明电脑没装 Python，给出安装指引
+if not defined PY_CMD (
+    echo.
+    echo   [错误] 没有检测到 Python，无法继续。
+    echo.
+    echo   请先安装 Python 3.11 或更高版本，步骤如下：
+    echo     1. 打开网址 https://www.python.org/downloads/
+    echo     2. 下载 Python 3.11 以上的安装包并运行
+    echo     3. 安装时务必勾选最下方的 "Add Python to PATH"
+    echo     4. 装好后重新双击本脚本
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 显示检测到的版本，让学生确认用的是哪一个 Python
+for /f "delims=" %%v in ('%PY_CMD% --version 2^>^&1') do set "PY_VER_TEXT=%%v"
+echo       已找到：!PY_VER_TEXT!    （命令：%PY_CMD%）
+
+REM 本项目需要 Python 3.11 及以上，版本太低会缺少部分语法特性
+%PY_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   [错误] Python 版本过低，本项目需要 3.11 或更高版本。
+    echo          当前版本：!PY_VER_TEXT!
+    echo          请到 https://www.python.org/downloads/ 下载新版本后重试。
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 版本过新时给出提醒：第三方库可能还没发布对应的预编译包
+%PY_CMD% -c "import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)" >nul 2>&1
+if not errorlevel 1 (
+    echo       [提醒] 检测到较新的 Python 版本，个别第三方库可能还没有
+    echo              对应的预编译包。若下一步依赖安装失败，请改装 Python 3.11。
+)
+echo       版本检查通过。
+
+REM ===========================================================================
+REM  第 2 步：创建虚拟环境
+REM  虚拟环境 = 给本项目单独准备一套 Python 库，不污染系统里的其它项目，
+REM  也不需要管理员权限。
+REM ===========================================================================
+echo.
+echo [2/5] 正在准备虚拟环境...
+
+if exist "%VENV_DIR%\Scripts\python.exe" (
+    echo       虚拟环境已存在，直接使用。
+) else (
+    echo       首次运行，正在创建虚拟环境（约 10-30 秒）...
+    %PY_CMD% -m venv "%VENV_DIR%"
+    if errorlevel 1 (
+        echo.
+        echo   [错误] 虚拟环境创建失败。
+        echo          可能原因：磁盘空间不足，或当前文件夹没有写入权限。
+        echo          可尝试：把整个项目文件夹移动到 D 盘等非系统盘后重试。
+        echo.
+        pause
+        exit /b 1
+    )
+    echo       虚拟环境创建完成。
+)
+
+REM 激活虚拟环境：激活后命令里的 python 和 pip 都指向虚拟环境内部
+REM 必须加 call，否则执行完这行脚本就直接退出了
+call "%VENV_DIR%\Scripts\activate.bat"
+if errorlevel 1 (
+    echo.
+    echo   [错误] 虚拟环境激活失败，可能是虚拟环境已损坏。
+    echo          解决办法：删除项目下的 .venv 文件夹，然后重新运行本脚本。
+    echo.
+    pause
+    exit /b 1
+)
+
+REM ===========================================================================
+REM  第 3 步：安装依赖
+REM  先检查关键库能不能导入，已经装好就跳过，避免每次启动都要等好几分钟
+REM ===========================================================================
+echo.
+echo [3/5] 正在检查项目依赖...
+
+REM 逐个探测关键库：缺一个就会重新安装依赖。
+REM 注意要覆盖「功能真的能用」的全部必需库，而不只是核心框架——
+REM   * python_multipart（上传代码文件要用）缺失时，服务能启动但一上传就 500；
+REM   * tree_sitter_c / tree_sitter_java（C 和 Java 的语法包）缺失时，
+REM     服务照常运行，但解析 C/Java 代码的结构会静默失败，学生看不出原因。
+REM 这类"能启动但功能残缺"的问题最难排查，所以这里宁多勿少。
+python -c "import fastapi, uvicorn, sqlalchemy, tree_sitter, tree_sitter_c, tree_sitter_java, faiss, python_multipart" >nul 2>&1
+if errorlevel 1 (
+    echo       依赖不完整，开始安装（首次约需 3-10 分钟，请耐心等待）...
+    echo.
+
+    REM 先升级 pip，避免旧版 pip 解析依赖出错
+    python -m pip install --upgrade pip --quiet %PIP_OPTS%
+
+    REM 第一步：用国内镜像源安装（下载更快）
+    echo       正在从镜像源安装：%PIP_INDEX%
+    python -m pip install -r "%REQ_FILE%" -i %PIP_INDEX% %PIP_OPTS%
+
+    REM 第二步：镜像源失败时自动回退到官方源（镜像可能临时故障或不可达）
+    if errorlevel 1 (
+        echo.
+        echo       镜像源安装失败，正在改用官方源重试，请稍候...
+        python -m pip install -r "%REQ_FILE%" -i %PIP_FALLBACK% %PIP_OPTS%
+    )
+
+    if errorlevel 1 (
+        echo.
+        echo   [错误] 依赖安装失败。
+        echo.
+        echo   常见原因和解决办法：
+        echo     1. 网络不通    -- 检查网络连接，或改用手机热点重试
+        echo     2. 镜像源问题  -- 打开本脚本，把 PIP_INDEX 换成其它镜像，
+        echo                       例如 https://pypi.tuna.tsinghua.edu.cn/simple/
+        echo     3. 权限不足    -- 不要把项目放在 C:\Program Files 这类受保护目录
+        echo     4. 版本不匹配  -- 当前用的是 !PY_VER_TEXT!
+        echo                       若为 3.13 以上的新版本，部分第三方库可能还没有
+        echo                       预编译包。解决办法：安装 Python 3.11 后，
+        echo                       删除本目录下的 .venv 文件夹再重新运行本脚本。
+        echo.
+        pause
+        exit /b 1
+    )
+    echo.
+    echo       依赖安装完成。
+) else (
+    echo       依赖已就绪，跳过安装。
+)
+
+REM ===========================================================================
+REM  第 4 步：检查端口是否被占用
+REM  如果 8000 端口被别的程序占着，uvicorn 会启动失败并抛出一堆难懂的报错，
+REM  所以这里提前检查，给出看得懂的中文提示
+REM ===========================================================================
+echo.
+echo [4/5] 正在检查端口 %APP_PORT% 是否可用...
+
+set "PORT_BUSY="
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%APP_PORT% " ^| findstr "LISTENING"') do set "PORT_BUSY=%%p"
+
+if defined PORT_BUSY (
+    echo.
+    echo   [错误] 端口 %APP_PORT% 已经被占用了（占用它的进程编号 PID = !PORT_BUSY!）。
+    echo.
+    echo   解决办法（任选一种）：
+    echo     1. 先双击运行 stop.bat 关闭旧的服务，再重新启动
+    echo     2. 按 Ctrl+Shift+Esc 打开任务管理器，结束 PID 为 !PORT_BUSY! 的进程
+    echo     3. 用记事本打开本脚本，找到上面的 APP_PORT，改成 8001 等其它端口
+    echo.
+    pause
+    exit /b 1
+)
+echo       端口可用。
+
+REM ===========================================================================
+REM  第 5 步：启动服务 + 自动打开浏览器
+REM ===========================================================================
+echo.
+echo [5/5] 正在启动服务...
+echo.
+echo ===========================================================================
+echo    服务启动后会自动打开浏览器
+echo.
+echo    学生界面：%APP_URL%
+echo    接口文档：%APP_URL%/docs
+echo    健康检查：%APP_URL%/api/v1/health
+echo.
+echo    关闭服务：在本窗口按 Ctrl+C，或双击运行 stop.bat
+echo ===========================================================================
+echo.
+
+REM 后台开一个「等待服务就绪」的小助手：
+REM 它每秒访问一次健康检查接口，等确认服务起来了才打开浏览器。
+REM 这样学生不会看到一个「无法访问」的空白页，也不用自己数秒数。
+start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$u='%APP_URL%/api/v1/health'; for($i=0;$i -lt 60;$i++){ try{ Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 2 | Out-Null; break }catch{ Start-Sleep -Seconds 1 } }; Start-Process '%OPEN_URL%'"
+
+REM 前台启动 FastAPI 服务
+REM 不加 --reload：这是给学生用的稳定运行模式，改代码后重启脚本才生效
+python -m uvicorn app.main:app --host %APP_HOST% --port %APP_PORT%
+
+REM 能走到这里，说明服务已经退出了（正常关闭或报错退出）
+echo.
+echo ===========================================================================
+echo    服务已停止。
+echo ===========================================================================
+echo.
+
+REM 非正常退出时窗口不要立刻关掉，方便学生看清错误信息
+if errorlevel 1 (
+    echo   [提示] 服务是非正常退出的，请把上面的错误信息截图反馈给老师。
+    echo.
+)
+
+pause
+endlocal
