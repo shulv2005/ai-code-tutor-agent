@@ -1,5 +1,20 @@
 # AI 代码导师 · 开源协作智能体
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Tests](https://img.shields.io/badge/tests-1112%20passed-brightgreen)](#8-开发与测试)
+[![Runs offline](https://img.shields.io/badge/%E6%97%A0%E7%BD%91%E7%BB%9C-%E4%B9%9F%E8%83%BD%E8%B7%91-success)](#24-缺什么都能跑降级矩阵)
+
+**仓库地址**：<https://github.com/shulv2005/ai-code-tutor-agent> · 欢迎提 Issue 与 PR
+
+```bash
+git clone https://github.com/shulv2005/ai-code-tutor-agent.git
+cd ai-code-tutor-agent
+# Windows：双击 start.bat —— 自动检查 Python → 建虚拟环境 → 装依赖 → 起服务 → 打开浏览器
+# Linux / macOS：见 [2.3 手动启动](#23-手动启动想在命令行里调试时)
+```
+
 > 一套跑在本机的 FastAPI 服务，同时解决两件事：
 > **教学生把代码写对**（检测 → 改错 → 注释 → 就地修改 → 归档管理），
 > **帮贡献者把 PR 提明白**（克隆 → 解析 → 检索 → 生成测试 → 沙箱验证 → 自动修复 → PR 草稿）。
@@ -9,7 +24,7 @@
 | 指标 | 现状 |
 | --- | --- |
 | **测试** | 1112 个用例全部离线可跑（不依赖网络 / API Key / Docker），`ruff` 0 问题 |
-| **验收脚本** | 12 个验收脚本 + 1 个前端行为测试脚本，共 **359 项**断言，全部实际跑过并附有输出（见第 8 节） |
+| **验收与审计脚本** | **16 个**（12 个 HTTP 验收 + 前端检查与行为测试 + 死代码审计 + `.bat` 生成），逐项实测结果见 [8.2](#82-验收脚本会真的起服务发-http-请求全部实际跑过) |
 | **真实模型验收** | 3 个示例作业 × 3 个功能全部通过，预设 bug 100% 命中（见第 8.3 节） |
 
 **这台机器上没有大模型 Key、没有 Docker、甚至没有网络，项目依然能跑起来**——
